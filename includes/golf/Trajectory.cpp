@@ -126,7 +126,6 @@ void Trajectory::Step() {
             mResult = TimeLimit;
         }
         if (mResult != Computing) {
-            // The old code omitted the terminal position between sample ticks.
             if ((mSubsteps & 3) != 0)
                 Record();
             break;

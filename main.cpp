@@ -26,16 +26,14 @@ public:
         const GXColor red = Color(255, 40, 40);
         const Vec3* points = trajectory.Points();
         const unsigned count = trajectory.Count();
+        // ViewMain
         if (IsPass(golf::game::ViewMain)) {
             Canvas world(Canvas::World);
             world.Polyline(points, count, Style(red, 2, DepthTest), 4);
         }
-        // *********************************************************************************
+        // ViewMap
         else if (IsPass(golf::game::ViewMap) && trajectory.MapVisible()) {
             Canvas map(Canvas::World);
-            // Map footprint: height must not displace the path in the overhead
-            // view. Disable depth so the course cannot hide the prediction.
-
             map.MapPath(points, count, points[0].y,
                         Style(Color(0, 0, 0, 200), 4, AlwaysVisible), 4);
 
@@ -50,9 +48,9 @@ public:
                                ? red
                                : Color(255, 180, 40));
             }
-            // OSReport("[Golf] %.3f x %.3f\n", map.Width(), map.Height());
-        } else if (IsPass(golf::game::ViewGauge) &&
-                   golf::game::GaugeVisible()) {
+        }
+        // ViewGauge
+        else if (IsPass(golf::game::ViewGauge) && golf::game::GaugeVisible()) {
             Canvas ui(Canvas::Overlay, EGG::Screen::GetSizeXMax(),
                       EGG::Screen::GetSizeYMax());
             const float x = golf::game::GaugeX();
@@ -61,8 +59,9 @@ public:
             ui.FillRect(Rect(x - 12, y - 1.5f, 24, 3), Style(red));
             ui.Triangle(Vec3(x - 18, y - 4), Vec3(x - 13, y),
                         Vec3(x - 18, y + 4), Style(red));
-        } else if (IsPass(golf::game::ViewHud,
-                          RPGrpRenderer::EDrawPass_Draw2D)) {
+        }
+        // ViewHud
+        else if (IsPass(golf::game::ViewHud, RPGrpRenderer::EDrawPass_Draw2D)) {
             const char* status = "";
             if (trajectory.Status() == golf::Trajectory::Computing)
                 status = " calculating";

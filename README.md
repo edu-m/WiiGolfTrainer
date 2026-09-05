@@ -13,3 +13,7 @@ You will need to clone the [Kokeshi repo](https://github.com/PackProject/Kokeshi
 Simply head to any golf game (can be both a course or a training game), you should immediately see both a 3d line on the world and a projection on the map. Both will take into account wind speed and direction, as well as the rolling of the ball itself as it hits the ground. Use the (-) button to cycle through the power levels (100% down to 10%).
 
 In the code inside `main.cpp` there is a line `#define PREVIEW 1`, leave it to 1 if you want a text overlay on the screen that indicates current power level and distance (if the ball is estimated to go out of bounds it will report "hazard"), otherwise set it to 0.
+
+## Note
+
+This mod is still considered in beta, it might contain bugs. While most graphical glitches have been ironed out, there can be some issues still.

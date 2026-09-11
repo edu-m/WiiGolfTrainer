@@ -1,5 +1,8 @@
 #include "Draw.hpp"
 
+#include "GXLight.h"
+#include "GXTypes.h"
+#include "Math.hpp"
 #include <egg/gfx/eggDrawGX.h>
 #include <egg/gfx/eggStateGX.h>
 
@@ -67,7 +70,6 @@ Canvas::Canvas(Space space, float width, float height)
     GXGetViewportv(viewport);
     mWidth = viewport[2];
     mHeight = viewport[3];
-    // RPGrpRenderer::Rendering copies the active camera here each view
     const float (*camera)[4] = reinterpret_cast<const float (*)[4]>(0x8040A8C0);
     for (int r = 0; r < 3; ++r)
         for (int c = 0; c < 4; ++c)
@@ -135,12 +137,18 @@ void Canvas::Line(const Vec3& a, const Vec3& b, const Style& style) {
 }
 
 void Canvas::Polyline(const Vec3* points, unsigned count, const Style& style,
-                      unsigned stride) {
-    Strip(points, count, style, stride, false, 0);
+                      unsigned stride, bool shift_phase) {
+    shift_phase ? StripShiftPhase(points, count, style, stride, false, 0)
+                : Strip(points, count, style, stride, false, 0);
 }
+
 void Canvas::MapPath(const Vec3* points, unsigned count, float y,
                      const Style& style, unsigned stride) {
     Strip(points, count, style, stride, true, y);
+}
+void Canvas::PolylineSpeed(const Vec3* points, const float* speeds,
+                           unsigned count, const Style& style, unsigned stride) {
+    StripSpeed(points, speeds, count, style, stride, false, 0);
 }
 void Canvas::Strip(const Vec3* points, unsigned count, const Style& style,
                    unsigned stride, bool flatten, float y) {
@@ -163,6 +171,71 @@ void Canvas::Strip(const Vec3* points, unsigned count, const Style& style,
         GXEnd();
         start += n - 1;
     }
+}
+void Canvas::StripShiftPhase(const Vec3* points, unsigned count,
+                             const Style& style, unsigned stride, bool flatten,
+                             float y) {
+    if (!mValid || !(mWidth > 0 && mHeight > 0) || points == NULL ||
+        count < 2 || stride == 0)
+        return;
+    Prepare(style);
+    GXSetVtxDesc(GX_VA_CLR0, GX_DIRECT);
+    GXSetVtxAttrFmt(GX_VTXFMT0, GX_VA_CLR0, GX_CLR_RGBA, GX_RGBA8, 0);
+    GXSetChanCtrl(GX_COLOR0A0, GX_FALSE, GX_SRC_REG, GX_SRC_VTX,
+                  GX_LIGHT_NULL, GX_DF_NONE, GX_AF_NONE);
+    const unsigned last = count - 1;
+    const unsigned samples = last / stride + (last % stride != 0 ? 1 : 0) + 1;
+    const float hueStep = 360.0f / (samples - 1);
+    for (unsigned start = 0; start < samples - 1;) {
+        const unsigned n = samples - start > 256 ? 256 : samples - start;
+        GXBegin(GX_LINESTRIP, GX_VTXFMT0, static_cast<u16>(n));
+        for (unsigned j = 0; j < n; ++j) {
+            const unsigned sample = start + j;
+            const unsigned index =
+                sample == samples - 1 ? last : sample * stride;
+            const Vec3& p = points[index];
+            const GXColor color = ShiftColorPhase(style.color, sample * hueStep);
+            GXPosition3f32(p.x, flatten ? y : p.y, p.z);
+            GXColor4u8(color.r, color.g, color.b, color.a);
+        }
+        GXEnd();
+        start += n - 1;
+    }
+    GXSetVtxDesc(GX_VA_CLR0, GX_NONE);
+    GXSetChanCtrl(GX_COLOR0A0, GX_FALSE, GX_SRC_REG, GX_SRC_REG,
+                  GX_LIGHT_NULL, GX_DF_NONE, GX_AF_NONE);
+}
+
+void Canvas::StripSpeed(const Vec3* points, const float* speeds, unsigned count,
+                        const Style& style, unsigned stride, bool flatten,
+                        float y) {
+    if (!mValid || !(mWidth > 0 && mHeight > 0) || points == NULL ||
+        speeds == NULL || count < 2 || stride == 0)
+        return;
+    Prepare(style);
+    GXSetVtxDesc(GX_VA_CLR0, GX_DIRECT);
+    GXSetVtxAttrFmt(GX_VTXFMT0, GX_VA_CLR0, GX_CLR_RGBA, GX_RGBA8, 0);
+    GXSetChanCtrl(GX_COLOR0A0, GX_FALSE, GX_SRC_REG, GX_SRC_VTX,
+                  GX_LIGHT_NULL, GX_DF_NONE, GX_AF_NONE);
+    const unsigned last = count - 1;
+    const unsigned samples = last / stride + (last % stride != 0 ? 1 : 0) + 1;
+    for (unsigned start = 0; start < samples - 1;) {
+        const unsigned n = samples - start > 256 ? 256 : samples - start;
+        GXBegin(GX_LINESTRIP, GX_VTXFMT0, static_cast<u16>(n));
+        for (unsigned j = 0; j < n; ++j) {
+            const unsigned sample = start + j;
+            const unsigned index = sample == samples - 1 ? last : sample * stride;
+            const Vec3& p = points[index];
+            const GXColor color = AssignSpeedColor(style.color, speeds[index], speeds[0]);
+            GXPosition3f32(p.x, flatten ? y : p.y, p.z);
+            GXColor4u8(color.r, color.g, color.b, color.a);
+        }
+        GXEnd();
+        start += n - 1;
+    }
+    GXSetVtxDesc(GX_VA_CLR0, GX_NONE);
+    GXSetChanCtrl(GX_COLOR0A0, GX_FALSE, GX_SRC_REG, GX_SRC_REG,
+                  GX_LIGHT_NULL, GX_DF_NONE, GX_AF_NONE);
 }
 
 void Canvas::Triangle(const Vec3& a, const Vec3& b, const Vec3& c,
@@ -256,8 +329,8 @@ void Canvas::Marker(const Vec3& world, float r, GXColor color) {
     Vec3 diamond[5] = {Vec3(p.x, p.y - r), Vec3(p.x + r, p.y),
                        Vec3(p.x, p.y + r), Vec3(p.x - r, p.y),
                        Vec3(p.x, p.y - r)};
-    Polyline(diamond, 5, Style(Color(0, 0, 0), 4, AlwaysVisible));
-    Polyline(diamond, 5, Style(color, 2, AlwaysVisible));
+    Polyline(diamond, 5, Style(Color(0, 0, 0), 4, AlwaysVisible), 1);
+    Polyline(diamond, 5, Style(color, 2, AlwaysVisible), 1);
     mSpace = World;
     EGG::StateGX::GXSetProjectionv_(mProjection);
     GXLoadPosMtxImm(mCamera, GX_PNMTX0);

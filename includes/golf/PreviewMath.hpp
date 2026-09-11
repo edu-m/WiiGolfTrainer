@@ -3,6 +3,16 @@
 #include "../draw/Math.hpp"
 
 namespace golf {
+inline bool AngleChanged(float a, float b) {
+    const float turn = 6.28318530718f;
+    float delta = a - b;
+    if (delta < 0)
+        delta = -delta;
+    if (delta > turn * 0.5f)
+        delta = turn - delta;
+    return delta > 0.0001f || delta < -0.0001f;
+}
+
 inline int NextPowerStep(int step) {
     return step >= 18 ? 0 : step + 1;
 }

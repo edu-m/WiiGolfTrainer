@@ -40,7 +40,9 @@ public:
 
     void Line(const Vec3& a, const Vec3& b, const Style& style);
     void Polyline(const Vec3* points, unsigned count, const Style& style,
-                  unsigned stride = 1);
+                  unsigned stride = 1, bool shift_phase = false);
+    void PolylineSpeed(const Vec3* points, const float* speeds, unsigned count,
+                       const Style& style, unsigned stride = 1);
     void MapPath(const Vec3* points, unsigned count, float planeY,
                  const Style& style, unsigned stride = 1);
     void Triangle(const Vec3& a, const Vec3& b, const Vec3& c,
@@ -60,6 +62,9 @@ private:
     Canvas& operator=(const Canvas&);
     void Prepare(const Style& style);
     void Strip(const Vec3*, unsigned, const Style&, unsigned, bool, float);
+    void StripShiftPhase(const Vec3*, unsigned, const Style&, unsigned, bool, float);
+    void StripSpeed(const Vec3*, const float*, unsigned, const Style&, unsigned,
+                    bool, float);
     void Ring(const Vec3&, float, const Style&, unsigned, bool);
     void SetOverlay(float width, float height);
 

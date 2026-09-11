@@ -13,6 +13,7 @@ Trajectory::Trajectory() {
 
 void Trajectory::Reset() {
     mCount = mSubsteps = 0;
+    mDistanceYards = 0;
     mResult = Hidden;
     mMapVisible = false;
     mPowerStep = 0;
@@ -22,6 +23,9 @@ void Trajectory::Reset() {
     mLie = 0;
     mPlayer = mBall = NULL;
     mBallPos = VEC3();
+    mGoalPos = VEC3();
+    mField = NULL;
+    mHoleSearch.Reset();
 }
 
 void Trajectory::Update() {
@@ -42,7 +46,15 @@ void Trajectory::Update() {
         return;
     }
     const VEC3 pos = Read<VEC3>(player, PLYR_BALLPOS);
+    const VEC3* goal = FieldGetGoalPos(field);
+    if (goal == NULL) {
+        Reset();
+        return;
+    }
     const bool newShot = player != mPlayer || ball != mBall || club != mClub ||
+                         field != mField ||
+                         goal->x != mGoalPos.x || goal->y != mGoalPos.y ||
+                         goal->z != mGoalPos.z ||
                          pos.x != mBallPos.x || pos.y != mBallPos.y ||
                          pos.z != mBallPos.z;
     if (newShot)
@@ -53,11 +65,6 @@ void Trajectory::Update() {
 
     float nominal = 1;
     if (club == CLUB_PT) {
-        const VEC3* goal = FieldGetGoalPos(field);
-        if (goal == NULL) {
-            Reset();
-            return;
-        }
         const float dx = pos.x - goal->x, dz = pos.z - goal->z;
         nominal =
             drawing::Clamp01(nw4r::math::FSqrt(dx * dx + dz * dz) / 25.0f);
@@ -68,26 +75,39 @@ void Trajectory::Update() {
     u8* wind = Read<u8*>(field, 0x68);
     const float windAngle = wind != NULL ? Read<float>(wind, 8) : 0;
     const int windSpeed = wind != NULL ? Read<int>(wind, 0x10) : 0;
+    if (newShot || lie != mLie || AngleChanged(windAngle, mWindAngle) ||
+        windSpeed != mWindSpeed)
+        mHoleSearch.Begin(club, lie, pos, *goal);
     const bool changed = newShot || mResult == Hidden || power != mPower ||
-                         angle != mAngle || lie != mLie ||
-                         windAngle != mWindAngle || windSpeed != mWindSpeed;
+                         AngleChanged(angle, mAngle) || lie != mLie ||
+                         AngleChanged(windAngle, mWindAngle) ||
+                         windSpeed != mWindSpeed;
+    mMapVisible = FieldMapHidden(field, 0) == 0;
+    if (!changed) {
+        if (mResult == Computing)
+            Step(StepsPerFrame);
+        else
+            mHoleSearch.Step();
+        return;
+    }
+
     mPlayer = player;
     mBall = ball;
     mClub = club;
     mBallPos = pos;
+    mGoalPos = *goal;
+    mField = field;
     mPower = power;
     mAngle = angle;
     mLie = lie;
     mWindAngle = windAngle;
     mWindSpeed = windSpeed;
-    mMapVisible = FieldMapHidden(field, 0) == 0;
-    if (changed)
-        Restart();
-    if (mResult == Computing)
-        Step();
+    Restart();
+    Step(StepsWhileChanging);
 }
 
 void Trajectory::Restart() {
+    mHoleSearch.Interrupt();
     u8* player = CurrentPlayer();
     void* club = Read<void*>(ClubMgr(), 0xC + mClub * 4);
     ClubApplyVelFn applyVel = (*(ClubApplyVelFn**)club)[3];
@@ -100,22 +120,36 @@ void Trajectory::Restart() {
     BallSetup(sim, &velocity, spin, 0.0);
     *(void**)((u8*)sim + BALL_SWING) = NULL;
     mCount = mSubsteps = 0;
+    mDistanceYards = 0;
     mResult = Computing;
+    RecordSpeed();
     Record();
+}
+
+void Trajectory::RecordSpeed() {
+    const VEC3 velocity = Read<VEC3>(SimBall(), BALL_VELOCITY);
+    mStepSpeeds[mSubsteps] = nw4r::math::FSqrt(
+        velocity.x * velocity.x + velocity.y * velocity.y + velocity.z * velocity.z);
 }
 
 void Trajectory::Record() {
     const VEC3* pos = Read<VEC3*>(SimBall(), BALL_POS_PTR);
-    if (pos != NULL && mCount < MaxPoints)
-        mPoints[mCount++] = *pos;
+    if (pos != NULL && mCount < MaxPoints) {
+        mPoints[mCount] = *pos;
+        mSpeeds[mCount] = mStepSpeeds[mSubsteps];
+        ++mCount;
+    }
 }
 
-void Trajectory::Step() {
+void Trajectory::Step(unsigned budget) {
     GolfBall* sim = SimBall();
-    for (unsigned i = 0; i < StepsPerFrame; ++i) {
+    for (unsigned i = 0; i < budget; ++i) {
         BallCalculate(sim, 0);
         ++mSubsteps;
-        if ((mSubsteps & 3) == 0)
+        RecordSpeed();
+        if (Read<int>(sim, BALL_HAZARD) == 0 && BallIsHoled(sim, mGoalPos))
+            mHoleSearch.Witness(mPower, mAngle);
+        if (mSubsteps % SampleInterval == 0)
             Record();
         if (Read<int>(sim, BALL_HAZARD) != 0) {
             BallStop(sim);
@@ -126,18 +160,24 @@ void Trajectory::Step() {
             mResult = TimeLimit;
         }
         if (mResult != Computing) {
-            if ((mSubsteps & 3) != 0)
+            if (mSubsteps % SampleInterval != 0)
                 Record();
             break;
         }
     }
+    UpdateDistance();
 }
 
 int Trajectory::DistanceYards() const {
+    return mDistanceYards;
+}
+
+void Trajectory::UpdateDistance() {
     if (mCount < 2)
-        return 0;
+        return;
     const float dx = mPoints[mCount - 1].x - mPoints[0].x;
     const float dz = mPoints[mCount - 1].z - mPoints[0].z;
-    return static_cast<int>(nw4r::math::FSqrt(dx * dx + dz * dz) * 0.10936f);
+    mDistanceYards =
+        static_cast<int>(nw4r::math::FSqrt(dx * dx + dz * dz) * 0.10936f);
 }
 } // namespace golf

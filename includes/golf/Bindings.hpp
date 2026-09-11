@@ -18,6 +18,8 @@ struct GolfBall;
 const u32 BALL_POS_PTR = 0x04C; // VEC3* mpTrans
 const u32 BALL_MOVING = 0x05C;  // bool mIsMoving
 const u32 BALL_BEFORE = 0x05D;  // bool mIsBeforeShot
+const u32 BALL_VELOCITY = 0x078; // VEC3, world units per physics substep
+const u32 BALL_GROUND = 0x090; // u16 ground attribute
 const u32 BALL_HAZARD = 0x098;  // s32 EKillType (0 = none)
 const u32 BALL_SWING = 0x138;   // void* mpSwing
 
@@ -81,6 +83,12 @@ inline GolfBall* CurrentBall() {
 
 template <typename T> T Read(const void* pBase, u32 offset) {
     return *(const T*)((const u8*)pBase + offset);
+}
+
+inline bool BallIsHoled(const GolfBall* ball, const VEC3& goal) {
+    const unsigned ground = Read<u16>(ball, BALL_GROUND);
+    const VEC3* pos = Read<VEC3*>(ball, BALL_POS_PTR);
+    return (ground == 10 || ground == 11) && pos != NULL && pos->y < goal.y;
 }
 
 enum View {

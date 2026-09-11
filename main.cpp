@@ -1,6 +1,8 @@
+#include "GXTypes.h"
 #include "includes/draw/Draw.hpp"
 #include "includes/golf/Bindings.hpp"
 #include "includes/golf/Trajectory.hpp"
+#include "kiwiString.h"
 #include <egg/gfx/eggScreen.h>
 
 #include <libkiwi.h>
@@ -10,6 +12,14 @@
 #include <kokeshi.hpp>
 
 #define PREVIEW 1
+
+// 0 = solid, 1 = hue phase, 2 = recorded speed.
+#ifndef GOLF_CURVE_MODE
+#define GOLF_CURVE_MODE 2
+#endif
+#if GOLF_CURVE_MODE < 0 || GOLF_CURVE_MODE > 2
+#error GOLF_CURVE_MODE must be 0 (solid), 1 (hue phase) or 2 (speed)
+#endif
 
 namespace {
 using namespace drawing;
@@ -29,16 +39,23 @@ public:
         // ViewMain
         if (IsPass(golf::game::ViewMain)) {
             Canvas world(Canvas::World);
-            world.Polyline(points, count, Style(red, 2, DepthTest), 4);
+#if GOLF_CURVE_MODE == 2
+            world.PolylineSpeed(points, trajectory.Speeds(), count,
+                                Style(red, 2, DepthTest));
+#elif GOLF_CURVE_MODE == 1
+            world.Polyline(points, count, Style(red, 2, DepthTest), 1, true);
+#else
+            world.Polyline(points, count, Style(red, 2, DepthTest));
+#endif
         }
         // ViewMap
         else if (IsPass(golf::game::ViewMap) && trajectory.MapVisible()) {
             Canvas map(Canvas::World);
             map.MapPath(points, count, points[0].y,
-                        Style(Color(0, 0, 0, 200), 4, AlwaysVisible), 4);
+                        Style(Color(0, 0, 0, 200), 4, AlwaysVisible));
 
             map.MapPath(points, count, points[0].y,
-                        Style(red, 2, AlwaysVisible), 4);
+                        Style(red, 2, AlwaysVisible));
 
             if (trajectory.Status() != golf::Trajectory::Computing) {
                 Vec3 end = points[count - 1];
@@ -70,10 +87,11 @@ public:
             else if (trajectory.Status() == golf::Trajectory::TimeLimit)
                 status = " partial";
 #if PREVIEW
-            kiwi::Text("Preview %d%% | meter %d%% | %dyd%s",
+            const char* holeable = trajectory.Holeability().Text();
+            kiwi::Text("Preview %d%% | meter %d%% | %dyd%s | holeable: %s",
                        (int)(trajectory.Scale() * 100 + 0.5f),
                        (int)(trajectory.Power() * 100 + 0.5f),
-                       trajectory.DistanceYards(), status)
+                       trajectory.DistanceYards(), status, holeable)
                 .SetPosition(0.06f, 0.84f)
                 .SetScale(0.7f)
                 .SetTextColor(kiwi::Color::RED)

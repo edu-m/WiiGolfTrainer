@@ -23,9 +23,9 @@ for the current club, ball position, lie and wind:
 
 - `holeable: searching`: simulation still running
 - `holeable: yes`: a shot is found to hole the ball
-- `holeable: not found`: no successful shot was found within the search budget;
+- `holeable: not found`: no successful shot was found within the search budget, this is **not** a proof that the position is impossible to hole.
 - `holeable: too far!`: you are phisically too distant to have a chance to hole, most maps don't allow hole in one;
-  this is **not** a proof that the position is impossible to hole.
+
 
 Note that the visible prediction takes priority. After it completes, the search borrows
 the simulation ball for up to 15 physics steps per update. It tries 12 aim
